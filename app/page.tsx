@@ -79,7 +79,15 @@ export default function App() {
 
   // Hosted link simulation
   const publicSlug = `pay-${invoiceNumber.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-  const hostedInvoiceUrl = `https://fastbill.io/i/${publicSlug}`;
+  const [origin, setOrigin] = useState('');
+
+useEffect(() => {
+  if (typeof window !== 'undefined') {
+    setOrigin(window.location.origin);
+  }
+}, []);
+
+const hostedInvoiceUrl = `${origin || 'https://whatsapp-invoice-nine.vercel.app/'}/?preview=true&inv=${invoiceNumber}`;
 
   // Item manipulations
   const handleAddItem = () => {
