@@ -92,19 +92,21 @@ export default function App() {
     setItems([...items, newItem]);
   };
 
-  const handleUpdateItem = (id, field, value) => {
-    setItems(items.map(item => {
-      if (item.id === id) {
-        return { ...item, [field]: value };
-      }
-      return item;
-    }));
-  };
+  const handleUpdateItem = (id: any, field: string, value: any) => {
+    setItems((prev: any[]) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          return { ...item, [field]: value };
+        }
+        return item;
+      })
+    );
+};
 
-  const handleRemoveItem = (id) => {
+  const handleRemoveItem = (id: any) => {
     if (items.length <= 1) return;
-    setItems(items.filter(item => item.id !== id));
-  };
+    setItems((prev: any[]) => prev.filter((item) => item.id !== id));
+};
 
   // WhatsApp formatted string generator
   const getWhatsAppMessageText = () => {
@@ -422,7 +424,7 @@ export default function App() {
                       min="0"
                       max="100"
                       value={taxPercent}
-                      onChange={(e) => setTaxPercent(e.target.value)}
+                      onChange={(e) => setTaxPercent(Number(e.target.value) || 0)}
                       className="w-14 text-right text-xs font-bold px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
                     />
                     <span className="w-16 text-right font-semibold text-slate-700">
@@ -439,7 +441,7 @@ export default function App() {
                       type="number"
                       min="0"
                       value={discountAmount}
-                      onChange={(e) => setDiscountAmount(e.target.value)}
+                      onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
                       className="w-14 text-right text-xs font-bold px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
                     />
                     <span className="w-16 text-right font-semibold text-rose-600">
