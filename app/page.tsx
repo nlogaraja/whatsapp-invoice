@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
   Building2, 
   User, 
@@ -16,32 +17,35 @@ import {
   Copy, 
   Check, 
   ArrowUpRight, 
-  Download,
   Percent,
   Sparkles
 } from 'lucide-react';
 
-export default function App() {
+interface InvoiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  rate: number;
+}
+
+function InvoiceApp() {
+  const searchParams = useSearchParams();
+
   // Navigation / View state
-  const [activeTab, setActiveTab] = useState('editor'); // 'editor' | 'preview'
+  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
-
-  //const [isPreview, setIsPreview] = useState(false);
+  const [isClientView, setIsClientView] = useState(false);
 
   // Business profile state
   const [businessName, setBusinessName] = useState('Swift Fix Plumbing & Electrical');
   const [businessPhone, setBusinessPhone] = useState('+1 (555) 349-2810');
-  const [currency, setCurrency] = useState('$');
+  const [currency, setCurrency] = useState('₹');
 
   // Document metadata
   const [docType, setDocType] = useState('Invoice'); // 'Invoice' | 'Quote'
   const [invoiceNumber, setInvoiceNumber] = useState('INV-2026-084');
-  
-  const [issueDate, setIssueDate] = useState('2026-04-01');
-  useEffect(()=> {
-    setIssueDate(new Date().toISOString().split('T')[0]);
-  },[]);
+  const [issueDate, setIssueDate] = useState('2026-11-09');
   const [status, setStatus] = useState('Pending'); // 'Draft' | 'Pending' | 'Paid'
 
   // Client Details
@@ -50,7 +54,7 @@ export default function App() {
   const [notes, setNotes] = useState('Payment due within 7 days. Thank you for your business!');
   
   // Line Items
-  const [items, setItems] = useState([
+  const [items, setItems] = useState<InvoiceItem[]>([
     { id: '1', description: 'Kitchen sink pipe leak repair & valve replacement', quantity: 1, rate: 120 },
     { id: '2', description: 'Heavy-duty brass shut-off valve parts', quantity: 2, rate: 35 },
     { id: '3', description: 'Service diagnostic call fee', quantity: 1, rate: 45 },
@@ -59,6 +63,7 @@ export default function App() {
   // Adjustments
   const [taxPercent, setTaxPercent] = useState(5);
   const [discountAmount, setDiscountAmount] = useState(15);
+  const [origin, setOrigin] = useState('');
 
   // Math calculations
   const subtotal = useMemo(() => {
@@ -79,21 +84,67 @@ export default function App() {
     return Math.max(0, subtotal + taxAmount - disc);
   }, [subtotal, taxAmount, discountAmount]);
 
-  // Hosted link simulation
-  const publicSlug = `pay-${invoiceNumber.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-  const [origin, setOrigin] = useState('');
+  // Set default issue date and client origin
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+    }
+  }, []);
 
-useEffect(() => {
-  if (typeof window !== 'undefined') {
-    setOrigin(window.location.origin);
-  }
-}, []);
+  // Hydrate data from URL when recipient opens the link
+  useEffect(() => {
+    const dataParam = searchParams.get('data');
+    const previewParam = searchParams.get('preview');
 
-//const hostedInvoiceUrl = `${origin || 'https://whatsapp-invoice-nine.vercel.app/'}/?preview=true&inv=${invoiceNumber}`;
-const generateShareUrl = () => {
-  if (typeof window === 'undefined') return '';
-  
-  const payload = {
+    if (dataParam) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(dataParam));
+        if (parsed.docType) setDocType(parsed.docType);
+        if (parsed.invoiceNumber) setInvoiceNumber(parsed.invoiceNumber);
+        if (parsed.issueDate) setIssueDate(parsed.issueDate);
+        if (parsed.status) setStatus(parsed.status);
+        if (parsed.businessName) setBusinessName(parsed.businessName);
+        if (parsed.businessPhone) setBusinessPhone(parsed.businessPhone);
+        if (parsed.clientName) setClientName(parsed.clientName);
+        if (parsed.clientPhone) setClientPhone(parsed.clientPhone);
+        if (parsed.currency) setCurrency(parsed.currency);
+        if (parsed.taxPercent !== undefined) setTaxPercent(Number(parsed.taxPercent) || 0);
+        if (parsed.discountAmount !== undefined) setDiscountAmount(Number(parsed.discountAmount) || 0);
+        if (parsed.notes) setNotes(parsed.notes);
+        if (parsed.items && Array.isArray(parsed.items)) setItems(parsed.items);
+
+        setIsClientView(true);
+        setActiveTab('preview');
+      } catch (err) {
+        console.error('Failed to parse invoice data from URL:', err);
+      }
+    } else if (previewParam === 'true') {
+      setActiveTab('preview');
+    }
+  }, [searchParams]);
+
+  // Generate URL carrying full invoice payload
+  const hostedInvoiceUrl = useMemo(() => {
+    if (!origin) return '';
+    const payload = {
+      docType,
+      invoiceNumber,
+      issueDate,
+      status,
+      businessName,
+      businessPhone,
+      clientName,
+      clientPhone,
+      currency,
+      taxPercent,
+      discountAmount,
+      notes,
+      items,
+    };
+    const encodedData = encodeURIComponent(JSON.stringify(payload));
+    return `${origin}/?preview=true&data=${encodedData}`;
+  }, [
+    origin,
     docType,
     invoiceNumber,
     issueDate,
@@ -107,80 +158,38 @@ const generateShareUrl = () => {
     discountAmount,
     notes,
     items,
-  };
+  ]);
 
-  const encodedData = encodeURIComponent(JSON.stringify(payload));
-  return `${window.location.origin}/?preview=true&data=${encodedData}`;
-};
-
-useEffect(() => {
-  if (typeof window === 'undefined') return;
-
-  const params = new URLSearchParams(window.location.search);
-  const dataParam = params.get('data');
-
-  if (dataParam) {
-    try {
-      const parsed = JSON.parse(decodeURIComponent(dataParam));
-      if (parsed.docType) setDocType(parsed.docType);
-      if (parsed.invoiceNumber) setInvoiceNumber(parsed.invoiceNumber);
-      if (parsed.issueDate) setIssueDate(parsed.issueDate);
-      if (parsed.status) setStatus(parsed.status);
-      if (parsed.businessName) setBusinessName(parsed.businessName);
-      if (parsed.businessPhone) setBusinessPhone(parsed.businessPhone);
-      if (parsed.clientName) setClientName(parsed.clientName);
-      if (parsed.clientPhone) setClientPhone(parsed.clientPhone);
-      if (parsed.currency) setCurrency(parsed.currency);
-      if (parsed.taxPercent !== undefined) setTaxPercent(parsed.taxPercent);
-      if (parsed.discountAmount !== undefined) setDiscountAmount(parsed.discountAmount);
-      if (parsed.notes) setNotes(parsed.notes);
-      if (parsed.items && Array.isArray(parsed.items)) setItems(parsed.items);
-      
-      // Automatically switch to Preview mode for the client
-      setActiveTab('preview');
-      
-    } catch (err) {
-      console.error('Failed to parse invoice data from URL:', err);
-    }
-  }
-}, []);
-
-// In your header JSX, only render the Edit button if it's NOT a client view:
-const isClientView = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('data');
-
-const hostedInvoiceUrl = generateShareUrl();
   // Item manipulations
   const handleAddItem = () => {
-    const newItem = {
+    const newItem: InvoiceItem = {
       id: Date.now().toString(),
       description: '',
       quantity: 1,
       rate: 0,
     };
-    setItems([...items, newItem]);
+    setItems((prev) => [...prev, newItem]);
   };
 
-  const handleUpdateItem = (id: any, field: string, value: any) => {
-    setItems((prev: any[]) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          return { ...item, [field]: value };
-        }
-        return item;
-      })
+  const handleUpdateItem = (id: string, field: keyof InvoiceItem, value: any) => {
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
     );
-};
+  };
 
-  const handleRemoveItem = (id: any) => {
+  const handleRemoveItem = (id: string) => {
     if (items.length <= 1) return;
-    setItems((prev: any[]) => prev.filter((item) => item.id !== id));
-};
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  };
 
   // WhatsApp formatted string generator
   const getWhatsAppMessageText = () => {
     const itemsList = items
-      .filter(i => i.description.trim() !== '')
-      .map(i => `• ${i.description} (x${i.quantity}) - ${currency}${(i.quantity * i.rate).toFixed(2)}`)
+      .filter((i) => i.description.trim() !== '')
+      .map(
+        (i) =>
+          `• ${i.description} (x${i.quantity}) - ${currency}${((Number(i.quantity) || 0) * (Number(i.rate) || 0)).toFixed(2)}`
+      )
       .join('\n');
 
     return `Hello *${clientName || 'there'}*,\n\nHere is your *${docType} #${invoiceNumber}* from *${businessName}*:\n\n${itemsList ? `${itemsList}\n\n` : ''}💰 *Total Due:* *${currency}${grandTotal.toFixed(2)}*\n\n📄 *View, download PDF, or pay online:*\n${hostedInvoiceUrl}\n\n_${notes}_`;
@@ -197,6 +206,7 @@ const hostedInvoiceUrl = generateShareUrl();
   };
 
   const handleCopyLink = () => {
+    if (!hostedInvoiceUrl) return;
     navigator.clipboard.writeText(hostedInvoiceUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -209,8 +219,8 @@ const hostedInvoiceUrl = generateShareUrl();
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 pb-20 font-sans antialiased">
-      {/* Top Mobile Bar */}
+    <div className="min-h-screen bg-slate-50 text-slate-800 pb-28 font-sans antialiased">
+      {/* Top Bar */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 shadow-sm">
         <div className="max-w-xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -225,31 +235,33 @@ const hostedInvoiceUrl = generateShareUrl();
             </div>
           </div>
 
-          {/* View Mode Toggle Button */}
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setActiveTab('editor')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'editor'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Edit3 className="w-3.5 h-3.5" /> Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('preview')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'preview'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" /> Preview
-            </button>
-          </div>
+          {/* View Mode Toggle Button: Hidden if opened by recipient */}
+          {!isClientView && (
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setActiveTab('editor')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === 'editor'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" /> Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('preview')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === 'preview'
+                    ? 'bg-white text-emerald-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" /> Preview
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -287,7 +299,7 @@ const hostedInvoiceUrl = generateShareUrl();
                     onChange={(e) => setStatus(e.target.value)}
                     className="w-full bg-slate-100 border border-slate-200 text-xs font-semibold rounded-xl px-2.5 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   >
-                    <option value="Draft">Draft (Grey)</option>
+                    <option value="Draft">Draft</option>
                     <option value="Pending">Pending Payment</option>
                     <option value="Paid">Paid / Settled</option>
                   </select>
@@ -337,7 +349,6 @@ const hostedInvoiceUrl = generateShareUrl();
 
             {/* Sender & Receiver Card */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-4">
-              {/* Business Info */}
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
                   <Building2 className="w-3.5 h-3.5 text-emerald-600" /> Your Business
@@ -360,7 +371,6 @@ const hostedInvoiceUrl = generateShareUrl();
                 </div>
               </div>
 
-              {/* Client Info */}
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
                   <User className="w-3.5 h-3.5 text-emerald-600" /> Client Details
@@ -376,7 +386,7 @@ const hostedInvoiceUrl = generateShareUrl();
                   <div className="relative">
                     <input
                       type="tel"
-                      placeholder="Client WhatsApp No. (e.g. 14155552671)"
+                      placeholder="Client WhatsApp No. (e.g. 919876543210)"
                       value={clientPhone}
                       onChange={(e) => setClientPhone(e.target.value)}
                       className="w-full text-sm font-medium pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
@@ -436,7 +446,7 @@ const hostedInvoiceUrl = generateShareUrl();
                             min="1"
                             step="any"
                             value={item.quantity}
-                            onChange={(e) => handleUpdateItem(item.id, 'quantity', e.target.value)}
+                            onChange={(e) => handleUpdateItem(item.id, 'quantity', Number(e.target.value) || 0)}
                             className="w-full text-xs font-bold px-2 py-1 bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none"
                           />
                         </div>
@@ -447,7 +457,7 @@ const hostedInvoiceUrl = generateShareUrl();
                             min="0"
                             step="any"
                             value={item.rate}
-                            onChange={(e) => handleUpdateItem(item.id, 'rate', e.target.value)}
+                            onChange={(e) => handleUpdateItem(item.id, 'rate', Number(e.target.value) || 0)}
                             className="w-full text-xs font-bold px-2 py-1 bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none"
                           />
                         </div>
@@ -480,7 +490,6 @@ const hostedInvoiceUrl = generateShareUrl();
                   <span className="font-semibold text-slate-800">{currency}{subtotal.toFixed(2)}</span>
                 </div>
 
-                {/* Tax Input */}
                 <div className="flex items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-1 text-slate-500">
                     <Percent className="w-3.5 h-3.5" />
@@ -501,7 +510,6 @@ const hostedInvoiceUrl = generateShareUrl();
                   </div>
                 </div>
 
-                {/* Discount Input */}
                 <div className="flex items-center justify-between gap-3 text-xs">
                   <span className="text-slate-500">Discount ({currency})</span>
                   <div className="flex items-center gap-2">
@@ -529,7 +537,6 @@ const hostedInvoiceUrl = generateShareUrl();
                 </div>
               </div>
 
-              {/* Payment notes / terms */}
               <div className="pt-2">
                 <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">Notes / Terms</label>
                 <textarea
@@ -545,43 +552,39 @@ const hostedInvoiceUrl = generateShareUrl();
         ) : (
           /* PREVIEW / RECEIPT VIEW */
           <div className="space-y-4">
-            {/* The Printable / Sharable Receipt Card */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md relative overflow-hidden">
-              {/* Receipt Top Ribbon */}
               <div className="flex justify-between items-start pb-4 border-b border-slate-100">
                 <div>
                   <div className="text-base font-bold text-slate-900">{businessName}</div>
                   <div className="text-xs text-slate-400">{businessPhone}</div>
                 </div>
                 <div className="text-right">
-                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    status === 'Paid' 
-                      ? 'bg-emerald-100 text-emerald-800' 
-                      : status === 'Pending'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}>
+                  <span
+                    className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      status === 'Paid'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : status === 'Pending'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
                     {status}
                   </span>
-                  <div className="text-xs font-bold text-slate-800 mt-1">{docType} #{invoiceNumber}</div>
+                  <div className="text-xs font-bold text-slate-800 mt-1">
+                    {docType} #{invoiceNumber}
+                  </div>
                   <div className="text-[11px] text-slate-400">{issueDate}</div>
                 </div>
               </div>
 
-              {/* Client Billed Box */}
               <div className="py-3 border-b border-slate-100 flex justify-between items-center text-xs">
                 <div>
                   <span className="text-slate-400 font-bold uppercase text-[10px] block">Billed To</span>
                   <div className="font-semibold text-slate-800">{clientName || 'Valued Customer'}</div>
                 </div>
-                {clientPhone && (
-                  <div className="text-right text-slate-500">
-                    {clientPhone}
-                  </div>
-                )}
+                {clientPhone && <div className="text-right text-slate-500">{clientPhone}</div>}
               </div>
 
-              {/* Items Breakdown Table */}
               <div className="py-4 space-y-2">
                 <div className="text-[10px] font-bold text-slate-400 uppercase grid grid-cols-12 pb-1 border-b border-slate-100">
                   <span className="col-span-7">Description</span>
@@ -593,41 +596,50 @@ const hostedInvoiceUrl = generateShareUrl();
                     <span className="col-span-7 font-medium text-slate-700 pr-1 truncate">
                       {item.description || 'Custom line item'}
                     </span>
-                    <span className="col-span-2 text-center text-slate-500">
-                      {item.quantity}
-                    </span>
+                    <span className="col-span-2 text-center text-slate-500">{item.quantity}</span>
                     <span className="col-span-3 text-right font-semibold text-slate-800">
-                      {currency}{((Number(item.quantity) || 0) * (Number(item.rate) || 0)).toFixed(2)}
+                      {currency}
+                      {((Number(item.quantity) || 0) * (Number(item.rate) || 0)).toFixed(2)}
                     </span>
                   </div>
                 ))}
               </div>
 
-              {/* Summary Calculations */}
               <div className="pt-3 border-t border-slate-100 space-y-1 text-xs">
                 <div className="flex justify-between text-slate-500">
                   <span>Subtotal</span>
-                  <span>{currency}{subtotal.toFixed(2)}</span>
+                  <span>
+                    {currency}
+                    {subtotal.toFixed(2)}
+                  </span>
                 </div>
                 {taxAmount > 0 && (
                   <div className="flex justify-between text-slate-500">
                     <span>Tax ({taxPercent}%)</span>
-                    <span>+{currency}{taxAmount.toFixed(2)}</span>
+                    <span>
+                      +{currency}
+                      {taxAmount.toFixed(2)}
+                    </span>
                   </div>
                 )}
                 {discountAmount > 0 && (
                   <div className="flex justify-between text-rose-600">
                     <span>Discount</span>
-                    <span>-{currency}{(Number(discountAmount) || 0).toFixed(2)}</span>
+                    <span>
+                      -{currency}
+                      {(Number(discountAmount) || 0).toFixed(2)}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
                   <span>Total Due</span>
-                  <span className="text-emerald-700 font-extrabold">{currency}{grandTotal.toFixed(2)}</span>
+                  <span className="text-emerald-700 font-extrabold">
+                    {currency}
+                    {grandTotal.toFixed(2)}
+                  </span>
                 </div>
               </div>
 
-              {/* Notes footer */}
               {notes && (
                 <div className="mt-4 p-2.5 bg-slate-50 rounded-xl text-[11px] text-slate-500 border border-slate-100">
                   <span className="font-semibold text-slate-700 block mb-0.5">Note:</span>
@@ -635,77 +647,89 @@ const hostedInvoiceUrl = generateShareUrl();
                 </div>
               )}
 
-              {/* Hosted invoice public link tag */}
-              <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex items-center justify-between text-[11px] text-slate-400">
-                <span className="truncate pr-2">Hosted link: {hostedInvoiceUrl}</span>
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className="text-emerald-700 font-bold hover:underline shrink-0"
-                >
-                  {copiedLink ? 'Copied!' : 'Copy Link'}
-                </button>
-              </div>
+              {!isClientView && (
+                <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="truncate pr-2">Hosted link: {hostedInvoiceUrl}</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="text-emerald-700 font-bold hover:underline shrink-0"
+                  >
+                    {copiedLink ? 'Copied!' : 'Copy Link'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Formatted WhatsApp Message Preview */}
-            <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                  <Share2 className="w-3.5 h-3.5" /> WhatsApp Pre-filled Text Preview
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyMessage}
-                  className="text-[11px] font-semibold text-emerald-800 bg-emerald-200/60 hover:bg-emerald-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all"
-                >
-                  {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  {copiedMessage ? 'Copied' : 'Copy Text'}
-                </button>
+            {!isClientView && (
+              <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                    <Share2 className="w-3.5 h-3.5" /> WhatsApp Pre-filled Text Preview
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyMessage}
+                    className="text-[11px] font-semibold text-emerald-800 bg-emerald-200/60 hover:bg-emerald-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all"
+                  >
+                    {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    {copiedMessage ? 'Copied' : 'Copy Text'}
+                  </button>
+                </div>
+                <pre className="text-[11px] text-emerald-950 font-mono whitespace-pre-wrap bg-white/80 p-3 rounded-xl border border-emerald-100 leading-relaxed max-h-48 overflow-y-auto">
+                  {getWhatsAppMessageText()}
+                </pre>
               </div>
-              <pre className="text-[11px] text-emerald-950 font-mono whitespace-pre-wrap bg-white/80 p-3 rounded-xl border border-emerald-100 leading-relaxed max-h-48 overflow-y-auto">
-                {getWhatsAppMessageText()}
-              </pre>
-            </div>
+            )}
           </div>
         )}
       </main>
 
-      {/* Floating Bottom Action Bar for Mobile 1-Tap Send */}
-      <footer className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 shadow-lg">
-        <div className="max-w-xl mx-auto flex items-center gap-3">
-          <div className="flex-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-none">
-              {docType} Total
+      {/* Floating Bottom Action Bar (hidden for recipient) */}
+      {!isClientView && (
+        <footer className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 shadow-lg">
+          <div className="max-w-xl mx-auto flex items-center gap-3">
+            <div className="flex-1">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-none">
+                {docType} Total
+              </div>
+              <div className="text-lg font-black text-slate-900 leading-tight">
+                {currency}
+                {grandTotal.toFixed(2)}
+              </div>
             </div>
-            <div className="text-lg font-black text-slate-900 leading-tight">
-              {currency}{grandTotal.toFixed(2)}
-            </div>
+
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="p-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-xl transition-all border border-slate-200"
+              title="Copy Hosted Link"
+            >
+              {copiedLink ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <Copy className="w-5 h-5" />}
+            </button>
+
+            <a
+              href={generateWhatsAppURL()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Send on WhatsApp</span>
+              <ArrowUpRight className="w-4 h-4 opacity-75" />
+            </a>
           </div>
-
-          {/* Quick Copy Link Button */}
-          <button
-            type="button"
-            onClick={handleCopyLink}
-            className="p-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-xl transition-all border border-slate-200"
-            title="Copy Hosted Link"
-          >
-            {copiedLink ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <Copy className="w-5 h-5" />}
-          </button>
-
-          {/* Primary 1-Tap WhatsApp Trigger */}
-          <a
-            href={generateWhatsAppURL()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Send on WhatsApp</span>
-            <ArrowUpRight className="w-4 h-4 opacity-75" />
-          </a>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs text-slate-400 font-semibold">Loading invoice...</div>}>
+      <InvoiceApp />
+    </Suspense>
   );
 }
