@@ -27,6 +27,8 @@ export default function App() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
 
+  //const [isPreview, setIsPreview] = useState(false);
+
   // Business profile state
   const [businessName, setBusinessName] = useState('Swift Fix Plumbing & Electrical');
   const [businessPhone, setBusinessPhone] = useState('+1 (555) 349-2810');
@@ -35,7 +37,7 @@ export default function App() {
   // Document metadata
   const [docType, setDocType] = useState('Invoice'); // 'Invoice' | 'Quote'
   const [invoiceNumber, setInvoiceNumber] = useState('INV-2026-084');
-
+  
   const [issueDate, setIssueDate] = useState('2026-04-01');
   useEffect(()=> {
     setIssueDate(new Date().toISOString().split('T')[0]);
@@ -46,7 +48,7 @@ export default function App() {
   const [clientName, setClientName] = useState('Michael Vance');
   const [clientPhone, setClientPhone] = useState('14155552671');
   const [notes, setNotes] = useState('Payment due within 7 days. Thank you for your business!');
-
+  
   // Line Items
   const [items, setItems] = useState([
     { id: '1', description: 'Kitchen sink pipe leak repair & valve replacement', quantity: 1, rate: 120 },
@@ -87,8 +89,66 @@ useEffect(() => {
   }
 }, []);
 
-const hostedInvoiceUrl = `${origin || 'https://whatsapp-invoice-nine.vercel.app/'}/?preview=true&inv=${invoiceNumber}`;
+//const hostedInvoiceUrl = `${origin || 'https://whatsapp-invoice-nine.vercel.app/'}/?preview=true&inv=${invoiceNumber}`;
+const generateShareUrl = () => {
+  if (typeof window === 'undefined') return '';
+  
+  const payload = {
+    docType,
+    invoiceNumber,
+    issueDate,
+    status,
+    businessName,
+    businessPhone,
+    clientName,
+    clientPhone,
+    currency,
+    taxPercent,
+    discountAmount,
+    notes,
+    items,
+  };
 
+  const encodedData = encodeURIComponent(JSON.stringify(payload));
+  return `${window.location.origin}/?preview=true&data=${encodedData}`;
+};
+
+useEffect(() => {
+  if (typeof window === 'undefined') return;
+
+  const params = new URLSearchParams(window.location.search);
+  const dataParam = params.get('data');
+
+  if (dataParam) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(dataParam));
+      if (parsed.docType) setDocType(parsed.docType);
+      if (parsed.invoiceNumber) setInvoiceNumber(parsed.invoiceNumber);
+      if (parsed.issueDate) setIssueDate(parsed.issueDate);
+      if (parsed.status) setStatus(parsed.status);
+      if (parsed.businessName) setBusinessName(parsed.businessName);
+      if (parsed.businessPhone) setBusinessPhone(parsed.businessPhone);
+      if (parsed.clientName) setClientName(parsed.clientName);
+      if (parsed.clientPhone) setClientPhone(parsed.clientPhone);
+      if (parsed.currency) setCurrency(parsed.currency);
+      if (parsed.taxPercent !== undefined) setTaxPercent(parsed.taxPercent);
+      if (parsed.discountAmount !== undefined) setDiscountAmount(parsed.discountAmount);
+      if (parsed.notes) setNotes(parsed.notes);
+      if (parsed.items && Array.isArray(parsed.items)) setItems(parsed.items);
+      
+      // Automatically switch to Preview mode for the client
+      setActiveTab('preview');
+      
+    } catch (err) {
+      console.error('Failed to parse invoice data from URL:', err);
+    }
+  }
+}, []);
+
+// In your header JSX, only render the Edit button if it's NOT a client view:
+const isClientView = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('data');
+
+const hostedInvoiceUrl = generateShareUrl();
   // Item manipulations
   const handleAddItem = () => {
     const newItem = {
@@ -264,10 +324,10 @@ const hostedInvoiceUrl = `${origin || 'https://whatsapp-invoice-nine.vercel.app/
                     onChange={(e) => setCurrency(e.target.value)}
                     className="w-full text-xs font-semibold px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
                   >
+                    <option value="₹">INR (₹)</option>
                     <option value="$">USD ($)</option>
                     <option value="€">EUR (€)</option>
                     <option value="£">GBP (£)</option>
-                    <option value="₹">INR (₹)</option>
                     <option value="A$">AUD (A$)</option>
                     <option value="C$">CAD (C$)</option>
                   </select>
