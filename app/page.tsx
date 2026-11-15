@@ -1,6 +1,8 @@
 "use client";
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { nanoid } from 'nanoid';
 import { 
   Building2, 
   User, 
@@ -18,7 +20,8 @@ import {
   Check, 
   ArrowUpRight, 
   Percent,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 
 interface InvoiceItem {
@@ -36,33 +39,35 @@ function InvoiceApp() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
   const [isClientView, setIsClientView] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedShortUrl, setSavedShortUrl] = useState('');
 
   // Business profile state
   const [businessName, setBusinessName] = useState('Swift Fix Plumbing & Electrical');
-  const [businessPhone, setBusinessPhone] = useState('+1 (555) 349-2810');
+  const [businessPhone, setBusinessPhone] = useState('+91 98765 43210');
   const [currency, setCurrency] = useState('₹');
 
   // Document metadata
   const [docType, setDocType] = useState('Invoice'); // 'Invoice' | 'Quote'
   const [invoiceNumber, setInvoiceNumber] = useState('INV-2026-084');
-  const [issueDate, setIssueDate] = useState('2026-11-09');
+  const [issueDate, setIssueDate] = useState('2026-11-15');
   const [status, setStatus] = useState('Pending'); // 'Draft' | 'Pending' | 'Paid'
 
   // Client Details
   const [clientName, setClientName] = useState('Michael Vance');
-  const [clientPhone, setClientPhone] = useState('14155552671');
+  const [clientPhone, setClientPhone] = useState('919876543210');
   const [notes, setNotes] = useState('Payment due within 7 days. Thank you for your business!');
   
   // Line Items
   const [items, setItems] = useState<InvoiceItem[]>([
-    { id: '1', description: 'Kitchen sink pipe leak repair & valve replacement', quantity: 1, rate: 120 },
-    { id: '2', description: 'Heavy-duty brass shut-off valve parts', quantity: 2, rate: 35 },
-    { id: '3', description: 'Service diagnostic call fee', quantity: 1, rate: 45 },
+    { id: '1', description: 'Kitchen sink pipe leak repair & valve replacement', quantity: 1, rate: 1200 },
+    { id: '2', description: 'Heavy-duty brass shut-off valve parts', quantity: 2, rate: 350 },
+    { id: '3', description: 'Service diagnostic call fee', quantity: 1, rate: 450 },
   ]);
 
   // Adjustments
   const [taxPercent, setTaxPercent] = useState(5);
-  const [discountAmount, setDiscountAmount] = useState(15);
+  const [discountAmount, setDiscountAmount] = useState(150);
   const [origin, setOrigin] = useState('');
 
   // Math calculations
@@ -88,10 +93,11 @@ function InvoiceApp() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setOrigin(window.location.origin);
+      setIssueDate(new Date().toISOString().split('T')[0]);
     }
   }, []);
 
-  // Hydrate data from URL when recipient opens the link
+  // Legacy URL parameter hydration fallback
   useEffect(() => {
     const dataParam = searchParams.get('data');
     const previewParam = searchParams.get('preview');
@@ -123,43 +129,6 @@ function InvoiceApp() {
     }
   }, [searchParams]);
 
-  // Generate URL carrying full invoice payload
-  const hostedInvoiceUrl = useMemo(() => {
-    if (!origin) return '';
-    const payload = {
-      docType,
-      invoiceNumber,
-      issueDate,
-      status,
-      businessName,
-      businessPhone,
-      clientName,
-      clientPhone,
-      currency,
-      taxPercent,
-      discountAmount,
-      notes,
-      items,
-    };
-    const encodedData = encodeURIComponent(JSON.stringify(payload));
-    return `${origin}/?preview=true&data=${encodedData}`;
-  }, [
-    origin,
-    docType,
-    invoiceNumber,
-    issueDate,
-    status,
-    businessName,
-    businessPhone,
-    clientName,
-    clientPhone,
-    currency,
-    taxPercent,
-    discountAmount,
-    notes,
-    items,
-  ]);
-
   // Item manipulations
   const handleAddItem = () => {
     const newItem: InvoiceItem = {
@@ -182,8 +151,78 @@ function InvoiceApp() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // WhatsApp formatted string generator
-  const getWhatsAppMessageText = () => {
+  // Save invoice to Supabase and return the clean short link
+  const saveInvoiceToSupabase = async (): Promise<string | null> => {
+    setIsSaving(true);
+    try {
+      const shortSlug = nanoid(6);
+      let clientId = null;
+
+      // 1. Check if client already exists by phone, otherwise insert
+      if (clientPhone.trim()) {
+        const cleanClientPhone = clientPhone.trim();
+        const { data: existingClient } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('phone', cleanClientPhone)
+          .maybeSingle();
+
+        if (existingClient) {
+          clientId = existingClient.id;
+          await supabase
+            .from('clients')
+            .update({ name: clientName || 'Customer' })
+            .eq('id', clientId);
+        } else {
+          const { data: newClient } = await supabase
+            .from('clients')
+            .insert({ name: clientName || 'Customer', phone: cleanClientPhone })
+            .select('id')
+            .single();
+          if (newClient) clientId = newClient.id;
+        }
+      }
+
+      // 2. Insert Invoice with short slug
+      const { error } = await supabase.from('invoices').insert({
+        id: shortSlug,
+        client_id: clientId,
+        invoice_number: invoiceNumber,
+        issue_date: issueDate,
+        status: status,
+        currency: currency,
+        items: items,
+        subtotal: subtotal,
+        tax_percent: taxPercent,
+        discount_amount: discountAmount,
+        grand_total: grandTotal,
+        notes: notes,
+        business_details: {
+          name: businessName,
+          phone: businessPhone,
+        },
+      });
+
+      if (error) {
+        console.error('Supabase insert error:', error);
+        alert(`Database error: ${error.message}`);
+        return null;
+      }
+
+      const shortUrl = `${origin || window.location.origin}/i/${shortSlug}`;
+      setSavedShortUrl(shortUrl);
+      return shortUrl;
+    } catch (err) {
+      console.error('Unexpected error saving invoice:', err);
+      alert('Failed to generate invoice link. Please try again.');
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Format WhatsApp message text
+  const buildWhatsAppMessage = (linkUrl: string) => {
     const itemsList = items
       .filter((i) => i.description.trim() !== '')
       .map(
@@ -192,28 +231,39 @@ function InvoiceApp() {
       )
       .join('\n');
 
-    return `Hello *${clientName || 'there'}*,\n\nHere is your *${docType} #${invoiceNumber}* from *${businessName}*:\n\n${itemsList ? `${itemsList}\n\n` : ''}💰 *Total Due:* *${currency}${grandTotal.toFixed(2)}*\n\n📄 *View, download PDF, or pay online:*\n${hostedInvoiceUrl}\n\n_${notes}_`;
+    return `Hello *${clientName || 'there'}*,\n\nHere is your *${docType} #${invoiceNumber}* from *${businessName}*:\n\n${itemsList ? `${itemsList}\n\n` : ''}💰 *Total Due:* *${currency}${grandTotal.toFixed(2)}*\n\n📄 *View & pay online:*\n${linkUrl}\n\n_${notes}_`;
   };
 
-  // Construct wa.me URL
-  const generateWhatsAppURL = () => {
+  // Primary Action: Save to Supabase -> Generate Short Link -> Open WhatsApp
+  const handleSendWhatsApp = async () => {
+    const shortUrl = await saveInvoiceToSupabase();
+    if (!shortUrl) return;
+
+    const messageText = buildWhatsAppMessage(shortUrl);
     const cleanPhone = clientPhone.replace(/\D/g, '');
-    const message = encodeURIComponent(getWhatsAppMessageText());
-    if (cleanPhone) {
-      return `https://wa.me/${cleanPhone}?text=${message}`;
-    }
-    return `https://wa.me/?text=${message}`;
+    const waUrl = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`
+      : `https://wa.me/?text=${encodeURIComponent(messageText)}`;
+
+    window.open(waUrl, '_blank');
   };
 
-  const handleCopyLink = () => {
-    if (!hostedInvoiceUrl) return;
-    navigator.clipboard.writeText(hostedInvoiceUrl);
+  // Copy Short Link Action
+  const handleCopyLink = async () => {
+    const shortUrl = savedShortUrl || (await saveInvoiceToSupabase());
+    if (!shortUrl) return;
+
+    navigator.clipboard.writeText(shortUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const handleCopyMessage = () => {
-    navigator.clipboard.writeText(getWhatsAppMessageText());
+  // Copy Formatted Message Action
+  const handleCopyMessage = async () => {
+    const shortUrl = savedShortUrl || (await saveInvoiceToSupabase());
+    if (!shortUrl) return;
+
+    navigator.clipboard.writeText(buildWhatsAppMessage(shortUrl));
     setCopiedMessage(true);
     setTimeout(() => setCopiedMessage(false), 2000);
   };
@@ -649,13 +699,16 @@ function InvoiceApp() {
 
               {!isClientView && (
                 <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex items-center justify-between text-[11px] text-slate-400">
-                  <span className="truncate pr-2">Hosted link: {hostedInvoiceUrl}</span>
+                  <span className="truncate pr-2">
+                    {savedShortUrl ? `Short link: ${savedShortUrl}` : 'Short link generated on Send/Copy'}
+                  </span>
                   <button
                     type="button"
                     onClick={handleCopyLink}
-                    className="text-emerald-700 font-bold hover:underline shrink-0"
+                    disabled={isSaving}
+                    className="text-emerald-700 font-bold hover:underline shrink-0 disabled:opacity-50"
                   >
-                    {copiedLink ? 'Copied!' : 'Copy Link'}
+                    {copiedLink ? 'Copied!' : 'Generate & Copy Link'}
                   </button>
                 </div>
               )}
@@ -666,19 +719,20 @@ function InvoiceApp() {
               <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                    <Share2 className="w-3.5 h-3.5" /> WhatsApp Pre-filled Text Preview
+                    <Share2 className="w-3.5 h-3.5" /> WhatsApp Message Preview
                   </span>
                   <button
                     type="button"
                     onClick={handleCopyMessage}
-                    className="text-[11px] font-semibold text-emerald-800 bg-emerald-200/60 hover:bg-emerald-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all"
+                    disabled={isSaving}
+                    className="text-[11px] font-semibold text-emerald-800 bg-emerald-200/60 hover:bg-emerald-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all disabled:opacity-50"
                   >
                     {copiedMessage ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                     {copiedMessage ? 'Copied' : 'Copy Text'}
                   </button>
                 </div>
                 <pre className="text-[11px] text-emerald-950 font-mono whitespace-pre-wrap bg-white/80 p-3 rounded-xl border border-emerald-100 leading-relaxed max-h-48 overflow-y-auto">
-                  {getWhatsAppMessageText()}
+                  {buildWhatsAppMessage(savedShortUrl || `${origin || 'https://whatsapp-invoice-nine.vercel.app'}/i/xxxxxx`)}
                 </pre>
               </div>
             )}
@@ -703,22 +757,32 @@ function InvoiceApp() {
             <button
               type="button"
               onClick={handleCopyLink}
-              className="p-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-xl transition-all border border-slate-200"
-              title="Copy Hosted Link"
+              disabled={isSaving}
+              className="p-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-xl transition-all border border-slate-200 disabled:opacity-50"
+              title="Generate & Copy Short Link"
             >
               {copiedLink ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <Copy className="w-5 h-5" />}
             </button>
 
-            <a
-              href={generateWhatsAppURL()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all"
+            <button
+              type="button"
+              onClick={handleSendWhatsApp}
+              disabled={isSaving}
+              className="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-70"
             >
-              <Share2 className="w-4 h-4" />
-              <span>Send on WhatsApp</span>
-              <ArrowUpRight className="w-4 h-4 opacity-75" />
-            </a>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Creating Link...</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4" />
+                  <span>Send on WhatsApp</span>
+                  <ArrowUpRight className="w-4 h-4 opacity-75" />
+                </>
+              )}
+            </button>
           </div>
         </footer>
       )}
