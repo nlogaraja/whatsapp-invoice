@@ -156,56 +156,34 @@ function InvoiceApp() {
     setIsSaving(true);
     try {
       const shortSlug = nanoid(6);
-      let clientId = null;
 
-      // 1. Check if client already exists by phone, otherwise insert
-      if (clientPhone.trim()) {
-        const cleanClientPhone = clientPhone.trim();
-        const { data: existingClient } = await supabase
-          .from('clients')
-          .select('id')
-          .eq('phone', cleanClientPhone)
-          .maybeSingle();
-
-        if (existingClient) {
-          clientId = existingClient.id;
-          await supabase
-            .from('clients')
-            .update({ name: clientName || 'Customer' })
-            .eq('id', clientId);
-        } else {
-          const { data: newClient } = await supabase
-            .from('clients')
-            .insert({ name: clientName || 'Customer', phone: cleanClientPhone })
-            .select('id')
-            .single();
-          if (newClient) clientId = newClient.id;
-        }
-      }
-
-      // 2. Insert Invoice with short slug
-      const { error } = await supabase.from('invoices').insert({
-        id: shortSlug,
-        client_id: clientId,
-        invoice_number: invoiceNumber,
-        issue_date: issueDate,
-        status: status,
-        currency: currency,
-        items: items,
-        subtotal: subtotal,
-        tax_percent: taxPercent,
-        discount_amount: discountAmount,
-        grand_total: grandTotal,
-        notes: notes,
-        business_details: {
-          name: businessName,
-          phone: businessPhone,
-        },
+      const response = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shortSlug,
+          clientName,
+          clientPhone,
+          invoiceNumber,
+          issueDate,
+          status,
+          currency,
+          items,
+          subtotal,
+          taxPercent,
+          discountAmount,
+          grandTotal,
+          notes,
+          businessName,
+          businessPhone,
+        }),
       });
 
-      if (error) {
-        console.error('Supabase insert error:', error);
-        alert(`Database error: ${error.message}`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('Server save error:', result.error);
+        alert(`Database error: ${result.error}`);
         return null;
       }
 
