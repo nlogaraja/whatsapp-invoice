@@ -7,3 +7,19 @@ body {
   background-color: #020617;
   color: #f8fafc;
 }
+
+@media print {
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-card {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+}

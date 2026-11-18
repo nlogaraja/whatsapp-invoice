@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
 import { notFound } from 'next/navigation';
+import ReceiptActions from '@/components/ReceiptActions';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -135,6 +136,14 @@ async function InvoiceContent({ params }: PageProps) {
             {invoice.notes}
           </div>
         )}
+        {/* UPI QR Code, Pay Button & PDF Download */}
+        <ReceiptActions
+          upiId={business.upiId}
+          businessName={business.name || 'Merchant'}
+          invoiceNumber={invoice.invoice_number}
+          grandTotal={Number(invoice.grand_total)}
+          currency={currency}
+          status={invoice.status}/>
       </div>
     </div>
   );

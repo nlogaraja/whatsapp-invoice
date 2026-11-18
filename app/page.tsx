@@ -45,6 +45,7 @@ function InvoiceApp() {
   // Business profile state
   const [businessName, setBusinessName] = useState('Swift Fix Plumbing & Electrical');
   const [businessPhone, setBusinessPhone] = useState('+91 98765 43210');
+  const [businessUpiId, setBusinessUpiId] = useState('');
   const [currency, setCurrency] = useState('₹');
 
   // Document metadata
@@ -176,6 +177,7 @@ function InvoiceApp() {
           notes,
           businessName,
           businessPhone,
+          businessUpiId,
         }),
       });
 
@@ -395,6 +397,13 @@ function InvoiceApp() {
                     value={businessPhone}
                     onChange={(e) => setBusinessPhone(e.target.value)}
                     className="w-full text-sm font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Your UPI ID (e.g. name@okaxis or 9876543210@ybl)"
+                    value={businessUpiId}
+                    onChange={(e) => setBusinessUpiId(e.target.value)}
+                    className="w-full sm:col-span-2 text-sm font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
               </div>

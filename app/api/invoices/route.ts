@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       notes,
       businessName,
       businessPhone,
+      businessUpiId,
     } = body;
 
     let clientId = null;
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
       business_details: {
         name: businessName,
         phone: businessPhone,
+        upiId: businessUpiId,
       },
     });
 
